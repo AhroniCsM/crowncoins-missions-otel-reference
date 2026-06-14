@@ -45,11 +45,13 @@ function messagingAttrs(topic: string) {
 
 /**
  * Wrap a producer so every `.send()` emits a PRODUCER span and propagates the
- * trace context into the message headers. Returns the same producer instance.
+ * trace context into the message headers. Returns a Proxy that forwards every
+ * member to the real producer except `send`, which is instrumented. (A Proxy is
+ * used rather than mutating `producer.send` because the librdkafka client's method
+ * binding can make in-place reassignment ineffective.)
  */
 export function instrumentProducer<T extends ProducerLike>(producer: T): T {
-  const originalSend = producer.send.bind(producer);
-  producer.send = async (record: any) => {
+  const instrumentedSend = async (record: any) => {
     const topic = record.topic;
     const span = tracer.startSpan(`Produce Topic ${topic}`, {
       kind: SpanKind.PRODUCER,
@@ -63,7 +65,7 @@ export function instrumentProducer<T extends ProducerLike>(producer: T): T {
       return { ...m, headers };
     });
     try {
-      const result = await context.with(ctx, () => originalSend(record));
+      const result = await context.with(ctx, () => producer.send(record));
       const partition = result?.[0]?.partition;
       if (partition !== undefined) {
         span.setAttribute('messaging.kafka.partition', partition);
@@ -77,7 +79,13 @@ export function instrumentProducer<T extends ProducerLike>(producer: T): T {
       span.end();
     }
   };
-  return producer;
+  return new Proxy(producer, {
+    get(target, prop, receiver) {
+      if (prop === 'send') return instrumentedSend;
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as T;
 }
 
 /**

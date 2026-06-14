@@ -34,8 +34,6 @@ const sdkConfig = {
     }),
     new FastifyOtelInstrumentation({
       registerOnInitialization: true,
-      // Drop the noisy per-lifecycle-hook spans (onRequest - middie, etc.).
-      instrumentHooks: false,
       // Name the server span exactly like the real service:
       // "Fastify/GET//missions/v2/get-user-missions".
       requestHook: (span, request) => {
