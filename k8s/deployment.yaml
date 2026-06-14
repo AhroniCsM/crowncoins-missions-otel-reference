@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crowncoins-production-missions
+  namespace: default
+  labels:
+    app: crowncoins-production-missions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crowncoins-production-missions
+  template:
+    metadata:
+      labels:
+        app: crowncoins-production-missions
+      annotations:
+        instrumentation.opentelemetry.io/inject-nodejs: "nodejs-instrumentation"
+    spec:
+      containers:
+        - name: missions
+          image: 104013952213.dkr.ecr.eu-north-1.amazonaws.com/crowncoins-sim-missions:missions-sim-v5
+          ports:
+            - containerPort: 5550
+          env:
+            - name: OTEL_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://$(OTEL_IP):4318"
+            - name: OTEL_SERVICE_NAME
+              value: "crowncoins-production-missions"
+            - name: OTEL_NODEJS_LOG_CORRELATION
+              value: "true"
+            # Silence the noisy fastify instrumentation spans (request handler /
+            # middie). Route naming is done by an app-level Fastify hook.
+            - name: OTEL_NODE_DISABLED_INSTRUMENTATIONS
+              # fastify: noisy request-handler/middie spans (route naming done in app).
+              # undici: the load generator's outgoing fetch calls are lab noise.
+              value: "fastify,undici"
+            - name: KAFKA_BOOTSTRAP
+              value: "missions-kafka:9092"
+            - name: REDIS_URL
+              value: "redis://missions-redis:6379"
+            - name: LOAD_RPS
+              value: "8"
+            - name: PORT
+              value: "5550"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 5550
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5550
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crowncoins-production-missions
+  namespace: default
+spec:
+  selector:
+    app: crowncoins-production-missions
+  ports:
+    - port: 80
+      targetPort: 5550

@@ -1,0 +1,42 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: nodejs-instrumentation
+  namespace: default
+spec:
+  exporter:
+    endpoint: http://$(OTEL_IP):4318
+  propagators:
+    - tracecontext
+    - baggage
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1"
+  nodejs:
+    # Stock operator image. Route naming is handled in app code (a Fastify
+    # onResponse hook renames the HTTP server span to
+    # "Fastify/GET//missions/v2/get-user-missions"), which is cleaner than
+    # @fastify/otel under the Nest adapter (that produced duplicate/"request"
+    # spans). The noisy fastify instrumentation is disabled via
+    # OTEL_NODE_DISABLED_INSTRUMENTATIONS in the Deployment env.
+    image: public.ecr.aws/w3s4j9x9/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs:0.66.0
+    env:
+      - name: OTEL_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+      - name: OTEL_LOGS_EXPORTER
+        value: none
+      - name: OTEL_METRICS_EXPORTER
+        value: none
+      - name: OTEL_NODEJS_AUTO_INSTRUMENTATION_ENABLED
+        value: "true"
+      - name: OTEL_LOG_LEVEL
+        value: info
+    resourceRequirements:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 128Mi

@@ -1,0 +1,26 @@
+{
+  "name": "crowncoins-missions-sim",
+  "version": "1.0.0",
+  "description": "Simulated crowncoins-production-missions service (NestJS + Fastify + Redis + Kafka) for Coralogix trace reproduction",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch"
+  },
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.2.0",
+    "@nestjs/common": "^10.4.4",
+    "@nestjs/core": "^10.4.4",
+    "@nestjs/platform-fastify": "^10.4.4",
+    "@opentelemetry/api": "^1.9.0",
+    "ioredis": "^5.4.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.5",
+    "@types/node": "^20.16.0",
+    "typescript": "^5.6.2"
+  }
+}
