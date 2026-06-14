@@ -91,19 +91,21 @@ No OTel SDK is started in app code. The **OpenTelemetry Operator** injects it vi
    tracer provider — that is how the Kafka spans and `Monetization/*` transactions are
    created without any SDK setup.
 
-### NestJS-on-Fastify specifics
+### Route naming — two approaches
 
-- **Fastify instrumentation + route names.** The Fastify framework is instrumented with
-  `@fastify/otel`, registered via `registerOnInitialization` in
-  [`otel/coralogix-autoinstrumentation.js`](otel/coralogix-autoinstrumentation.js) (a
-  plain app-level Fastify plugin cannot be used, because Nest seals the Fastify instance
-  before app code runs). Its `requestHook` names the server span
-  `Fastify/<METHOD>/<route>` and sets `http.route`; `instrumentHooks: false` drops the
-  noisy per-lifecycle-hook spans. Because the Nest adapter also produces a **duplicate**
-  `@opentelemetry/instrumentation-http` incoming server span, that one is suppressed so
-  `@fastify/otel` owns the single, route-named server span.
-- **Load-gen noise** is removed with `OTEL_NODE_DISABLED_INSTRUMENTATIONS=undici` in the
-  Deployment (the built-in generator's outgoing client calls — lab-only).
+- **This lab (NestJS-on-Fastify):** uses the **stock** auto-instrumentation image plus an
+  app-level Fastify hook in [`src/main.ts`](src/main.ts) that renames the HTTP server
+  span to `Fastify/<METHOD>/<route>` and sets `http.route`. Under the Nest Fastify
+  adapter, `@fastify/otel` conflicts with the HTTP instrumentation (duplicate server
+  spans), and suppressing the HTTP span to dedupe also suppresses downstream spans (the
+  Kafka producer span) — so the hook is the reliable approach here.
+- **Plain Fastify (no NestJS) — what the real customer service does:** just use
+  `@fastify/otel` via `registerOnInitialization` (see
+  [`otel/coralogix-autoinstrumentation.js`](otel/coralogix-autoinstrumentation.js)); it
+  names the server span by route automatically, no app code needed.
+- **Noise reduction** via `OTEL_NODE_DISABLED_INSTRUMENTATIONS=fastify,undici` in the
+  Deployment (`fastify`: the stock instrumentation adds no useful spans under Nest;
+  `undici`: the built-in load generator's outgoing client calls — lab-only).
 
 ---
 

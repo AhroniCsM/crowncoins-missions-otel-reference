@@ -1,9 +1,18 @@
-// Custom Node.js auto-instrumentation entry used by the OpenTelemetry Operator
-// init image. Identical in spirit to the real crowncoins-production-missions
-// service: standard Node auto-instrumentations PLUS @fastify/otel registered with
-// registerOnInitialization:true, which instruments the Fastify framework even when
-// it is wrapped by the NestJS Fastify adapter (a plain app-level plugin cannot,
-// because Nest seals the Fastify instance before app code runs).
+// OPTIONAL — for PLAIN Fastify services (no NestJS).
+//
+// This is the auto-instrumentation entry the real crowncoins missions service uses:
+// the standard Node auto-instrumentations PLUS @fastify/otel registered with
+// registerOnInitialization, which instruments the Fastify framework and names the
+// HTTP server span by route. On a plain Fastify app this "just works" — no app code,
+// no span suppression.
+//
+// Build it into an OTel Operator init image (see Dockerfile.autoinstrumentation) and
+// point the Instrumentation CR's spec.nodejs.image at it.
+//
+// NOTE: this lab runs NestJS-on-Fastify, where @fastify/otel + the Nest adapter
+// conflict (duplicate/suppressed server spans). The lab therefore uses the STOCK
+// init image + an app-level route-naming hook (src/main.ts) instead of this file.
+// Use THIS file only if your service is plain Fastify.
 const opentelemetry = require('@opentelemetry/sdk-node');
 const { diag, DiagConsoleLogger } = require('@opentelemetry/api');
 const { getStringFromEnv, diagLogLevelFromString } = require('@opentelemetry/core');
@@ -20,35 +29,11 @@ if (logLevel != null) {
   });
 }
 
-// getNodeAutoInstrumentations() honors OTEL_NODE_DISABLED_INSTRUMENTATIONS
-// (e.g. "undici" to drop the load generator's outgoing client spans).
+// getNodeAutoInstrumentations() honors OTEL_NODE_DISABLED_INSTRUMENTATIONS.
 const sdkConfig = {
   instrumentations: [
-    ...getNodeAutoInstrumentations({
-      // Under the Nest Fastify adapter, @opentelemetry/instrumentation-http also
-      // emits an incoming server span, duplicating @fastify/otel's. Suppress it so
-      // @fastify/otel owns the single, route-named server span.
-      '@opentelemetry/instrumentation-http': {
-        ignoreIncomingRequestHook: () => true,
-      },
-    }),
-    new FastifyOtelInstrumentation({
-      registerOnInitialization: true,
-      // Name the server span exactly like the real service:
-      // "Fastify/GET//missions/v2/get-user-missions".
-      requestHook: (span, request) => {
-        try {
-          const route = request?.routeOptions?.url || request?.routerPath;
-          const method = request?.method;
-          if (route && method) {
-            span.updateName(`Fastify/${method}/${route}`);
-            span.setAttribute('http.route', route);
-          }
-        } catch (_e) {
-          /* never break a request over instrumentation */
-        }
-      },
-    }),
+    ...getNodeAutoInstrumentations(),
+    new FastifyOtelInstrumentation({ registerOnInitialization: true }),
   ],
 };
 // getResourceDetectorsFromEnv is only exported by newer auto-instrumentations-node
