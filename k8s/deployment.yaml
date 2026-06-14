@@ -19,7 +19,8 @@ spec:
     spec:
       containers:
         - name: missions
-          image: 104013952213.dkr.ecr.eu-north-1.amazonaws.com/crowncoins-sim-missions:missions-sim-v5
+          # Replace with your own registry/image (build from the Dockerfile in this repo).
+          image: <YOUR_REGISTRY>/crowncoins-sim-missions:latest
           ports:
             - containerPort: 5550
           env:
