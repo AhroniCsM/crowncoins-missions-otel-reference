@@ -37,10 +37,14 @@ propagated through the Kafka message headers.
 > Setting `span.kind = internal` (or omitting `messaging.*`) prevents Coralogix from
 > detecting Kafka. The **span link must be on the top-level consumer span**, not a child.
 
-See [`src/kafka.service.ts`](src/kafka.service.ts) — the producer injects W3C
-`traceparent` into the message headers; the consumer starts a span from `ROOT_CONTEXT`
-(its own trace root) with `span.kind=CONSUMER` + the messaging attributes, extracts the
-producer context from the headers, and attaches it as a **span link**.
+All of this lives in one **reusable wrapper**, [`src/kafka-otel.ts`](src/kafka-otel.ts):
+`instrumentProducer(producer)` patches `.send()` to emit the PRODUCER span and inject
+`traceparent` into headers; `runInstrumented(consumer, { eachMessage })` wraps each
+message in a top-level CONSUMER span (with the messaging attributes + a span **link**
+to the producer extracted from headers). Your business code stays clean — see
+[`src/kafka.service.ts`](src/kafka.service.ts), which just calls `producer.send(...)`
+and `runInstrumented(...)` with no span code. Drop `kafka-otel.ts` into any service that
+uses `@confluentinc/kafka-javascript`.
 
 ---
 
@@ -63,7 +67,8 @@ producer context from the headers, and attaches it as a **span link**.
 | `src/main.ts` | Nest+Fastify bootstrap. Fastify hook that renames the HTTP server span to the full route (see below). |
 | `src/missions.controller.ts` | HTTP endpoints mirroring the real service. |
 | `src/redis.service.ts` | ioredis (auto-instrumented → Redis spans). |
-| `src/kafka.service.ts` | `@confluentinc/kafka-javascript` producer/consumer + **manual Kafka spans & span links** + the `Monetization/*` non-web transactions. |
+| `src/kafka-otel.ts` | **Reusable OTel wrapper** for `@confluentinc/kafka-javascript` — instruments producer/consumer (spans + links) so app code stays clean. |
+| `src/kafka.service.ts` | Kafka producer/consumer wired through the wrapper + the `Monetization/*` non-web transactions. |
 | `src/loadgen.service.ts` | Built-in load generator so traces always flow. **Remove in production.** |
 
 ---
