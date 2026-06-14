@@ -37,9 +37,11 @@ spec:
             # Silence the noisy fastify instrumentation spans (request handler /
             # middie). Route naming is done by an app-level Fastify hook.
             - name: OTEL_NODE_DISABLED_INSTRUMENTATIONS
-              # fastify: noisy request-handler/middie spans (route naming done in app).
-              # undici: the load generator's outgoing fetch calls are lab noise.
-              value: "fastify,undici"
+              # undici: the built-in load generator's outgoing fetch calls are lab
+              # noise. The Fastify instrumentation is intentionally LEFT ENABLED so
+              # the Fastify framework spans appear (parity with their setup); the
+              # full route name on the transaction is set by the app hook in main.ts.
+              value: "undici"
             - name: KAFKA_BOOTSTRAP
               value: "missions-kafka:9092"
             - name: REDIS_URL
