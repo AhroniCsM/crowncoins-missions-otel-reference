@@ -86,18 +86,19 @@ No OTel SDK is started in app code. The **OpenTelemetry Operator** injects it vi
    tracer provider — that is how the Kafka spans and `Monetization/*` transactions are
    created without any SDK setup.
 
-### Two NestJS-on-Fastify specifics
+### NestJS-on-Fastify specifics
 
-Both live in app code so the **stock operator image** can be used as-is:
-
-- **Route names.** Under the Nest Fastify adapter the HTTP instrumentation cannot
-  resolve the route template, so server spans stay named `GET`/`POST`. A Fastify
-  `onResponse` hook in [`src/main.ts`](src/main.ts) renames the span to
-  `Fastify/<METHOD>/<route>` and sets `http.route`.
-- **Noise reduction** via env in the Deployment:
-  `OTEL_NODE_DISABLED_INSTRUMENTATIONS=fastify,undici`
-  (`fastify`: redundant request-handler/middie spans; `undici`: the load generator's
-  outgoing client spans — lab-only).
+- **Fastify instrumentation + route names.** The Fastify framework is instrumented with
+  `@fastify/otel`, registered via `registerOnInitialization` in
+  [`otel/coralogix-autoinstrumentation.js`](otel/coralogix-autoinstrumentation.js) (a
+  plain app-level Fastify plugin cannot be used, because Nest seals the Fastify instance
+  before app code runs). Its `requestHook` names the server span
+  `Fastify/<METHOD>/<route>` and sets `http.route`; `instrumentHooks: false` drops the
+  noisy per-lifecycle-hook spans. Because the Nest adapter also produces a **duplicate**
+  `@opentelemetry/instrumentation-http` incoming server span, that one is suppressed so
+  `@fastify/otel` owns the single, route-named server span.
+- **Load-gen noise** is removed with `OTEL_NODE_DISABLED_INSTRUMENTATIONS=undici` in the
+  Deployment (the built-in generator's outgoing client calls — lab-only).
 
 ---
 
@@ -108,11 +109,18 @@ OTLP collector (the Coralogix agent) reachable at `http://$(status.hostIP):4318`
 image registry the cluster can pull from.
 
 ```bash
-# 1. Build & push the app image
+# 1. Build & push the auto-instrumentation init image (adds @fastify/otel)
+cd otel
+docker buildx build --platform linux/amd64 -f Dockerfile.autoinstrumentation \
+  -t <YOUR_REGISTRY>/crowncoins-sim-autoinstrumentation:fastify --push .
+cd ..
+# -> set this image in k8s/instrumentation.yaml (spec.nodejs.image)
+
+# 2. Build & push the app image
 docker buildx build --platform linux/amd64 \
   -t <YOUR_REGISTRY>/crowncoins-sim-missions:latest --push .
 
-# 2. Point k8s/deployment.yaml at your image, then apply (order matters):
+# 3. Point k8s/deployment.yaml at your app image, then apply (order matters):
 kubectl apply -f k8s/instrumentation.yaml   # Instrumentation CR (same namespace as the app)
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/kafka.yaml             # single-node KRaft Kafka for the lab

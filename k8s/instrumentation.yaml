@@ -13,13 +13,14 @@ spec:
     type: parentbased_traceidratio
     argument: "1"
   nodejs:
-    # Stock operator image. Route naming is handled in app code (a Fastify
-    # onResponse hook renames the HTTP server span to
-    # "Fastify/GET//missions/v2/get-user-missions"), which is cleaner than
-    # @fastify/otel under the Nest adapter (that produced duplicate/"request"
-    # spans). The noisy fastify instrumentation is disabled via
-    # OTEL_NODE_DISABLED_INSTRUMENTATIONS in the Deployment env.
-    image: public.ecr.aws/w3s4j9x9/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs:0.66.0
+    # Custom auto-instrumentation image that adds @fastify/otel via
+    # registerOnInitialization (same approach as the real service's
+    # coralogix-autoinstrumentation.js) so the Fastify framework is instrumented.
+    # The full route name on the transaction is still set by the app hook in
+    # main.ts ("Fastify/GET//missions/v2/get-user-missions"). undici is disabled
+    # via OTEL_NODE_DISABLED_INSTRUMENTATIONS in the Deployment env (load-gen noise).
+    # Build: see otel/ in this repo (Dockerfile.autoinstrumentation + coralogix-autoinstrumentation.js).
+    image: 104013952213.dkr.ecr.eu-north-1.amazonaws.com/crowncoins-sim-autoinstrumentation:nodejs-fastify-v4
     env:
       - name: OTEL_IP
         valueFrom:

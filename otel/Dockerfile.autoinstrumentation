@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.6
+# OpenTelemetry Operator Node.js auto-instrumentation init image, extended with
+# @fastify/otel so the Fastify framework is instrumented. Point the
+# Instrumentation CR's spec.nodejs.image at the resulting image.
+#
+#   docker buildx build --platform linux/amd64 \
+#     -f Dockerfile.autoinstrumentation \
+#     -t <YOUR_REGISTRY>/crowncoins-sim-autoinstrumentation:fastify --push .
+
+# ---- builder: pull the upstream auto-instrumentation tree, bump protobufjs ----
+FROM node:20-alpine AS builder
+WORKDIR /autoinstrumentation
+COPY --from=ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-nodejs:0.66.0 \
+     /autoinstrumentation/ ./
+
+RUN node -e "const fs=require('fs');const p=require('./package.json');p.overrides=Object.assign(p.overrides||{},{protobufjs:'7.5.5'});fs.writeFileSync('./package.json',JSON.stringify(p,null,2));" \
+ && rm -f package-lock.json \
+ && npm install --omit=dev --ignore-scripts --no-audit --no-fund \
+ && node -e "const v=require('./node_modules/protobufjs/package.json').version;console.log('protobufjs version =',v);if(v!=='7.5.5'){process.exit(1)}"
+
+# Add @fastify/otel and swap the entry script for the custom one.
+COPY coralogix-autoinstrumentation.js /autoinstrumentation/coralogix-autoinstrumentation.js
+RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund @fastify/otel \
+ && rm -f /autoinstrumentation/autoinstrumentation.js \
+ && ln /autoinstrumentation/coralogix-autoinstrumentation.js /autoinstrumentation/autoinstrumentation.js
+
+# ---- final: same shape as upstream (busybox + /autoinstrumentation, world-readable) ----
+FROM busybox
+COPY --from=builder /autoinstrumentation /autoinstrumentation
+RUN chmod -R go+r /autoinstrumentation
